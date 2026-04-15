@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SEC 10-Q Health Dashboard</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero" aria-labelledby="page-title">
+        <div class="hero-copy">
+          <p class="eyebrow">10-Q health dashboard</p>
+          <h1 id="page-title">Read the latest 10-Q like a company health report.</h1>
+          <p class="lede">
+            Track growth, profit, cash flow, debt, margin pressure, management commentary, and
+            early warning signs from the latest quarter.
+          </p>
+
+          <form id="compare-form" class="search-panel">
+            <label for="ticker">Ticker</label>
+            <div class="search-row">
+              <input
+                id="ticker"
+                name="ticker"
+                value="AAPL"
+                autocomplete="off"
+                maxlength="12"
+                spellcheck="false"
+                required
+              />
+              <button type="submit">Analyze 10-Q</button>
+            </div>
+            <p class="hint">
+              The page tries <code>/analyze/{ticker}</code> first and falls back to the current
+              compare endpoint when structured analysis is not available.
+            </p>
+          </form>
+        </div>
+      </section>
+
+      <p id="message" class="message" aria-live="polite"></p>
+
+      <section id="dashboard" class="dashboard is-hidden" aria-live="polite">
+        <section class="band band-overview" aria-labelledby="overview-title">
+          <div class="band-header">
+            <div class="band-copy">
+              <p class="eyebrow" id="company-label"></p>
+              <h2 id="overview-title">Overall health</h2>
+              <p id="health-summary" class="band-summary"></p>
+            </div>
+            <div class="score-stack">
+              <div class="status-chip" id="health-status"></div>
+              <div class="score-block">
+                <span>Health score</span>
+                <strong id="health-score"></strong>
+                <div class="score-track" aria-hidden="true">
+                  <div id="health-score-fill" class="score-fill"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="meta-grid">
+            <div class="meta-card">
+              <span>Latest filing</span>
+              <strong id="latest-date"></strong>
+              <a id="latest-link" target="_blank" rel="noreferrer">Open filing</a>
+            </div>
+            <div class="meta-card">
+              <span>Previous filing</span>
+              <strong id="previous-date"></strong>
+              <a id="previous-link" target="_blank" rel="noreferrer">Open filing</a>
+            </div>
+          </div>
+        </section>
+
+        <section class="band" aria-labelledby="trends-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Operating pulse</p>
+              <h2 id="trends-title">Company health signals</h2>
+            </div>
+            <span class="section-note" id="trend-source"></span>
+          </div>
+          <div id="trend-grid" class="metric-grid"></div>
+        </section>
+
+        <section class="band split-band" aria-labelledby="signals-title">
+          <div class="split-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Warnings</p>
+                <h2 id="signals-title">Warning signs</h2>
+              </div>
+            </div>
+            <div id="warning-list" class="stack-list"></div>
+          </div>
+
+          <div class="split-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Narrative</p>
+                <h2>Management and risk notes</h2>
+              </div>
+            </div>
+            <div id="note-list" class="stack-list"></div>
+          </div>
+        </section>
+
+        <section class="band" aria-labelledby="changes-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Sections</p>
+              <h2 id="changes-title">Section changes and supporting context</h2>
+            </div>
+            <span class="section-note" id="section-count"></span>
+          </div>
+          <div id="sections" class="section-list"></div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
