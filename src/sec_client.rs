@@ -45,15 +45,22 @@ impl SecClient {
     }
 
     pub async fn resolve_ticker(&self, ticker: &str) -> Result<CompanyTicker, AppError> {
+        self.fetch_company_tickers()
+            .await?
+            .into_iter()
+            .find(|company| company.ticker.eq_ignore_ascii_case(ticker))
+            .ok_or(AppError::TickerNotFound)
+    }
+
+    pub async fn fetch_company_tickers(&self) -> Result<Vec<CompanyTicker>, AppError> {
         // TODO: Cache this ticker map locally and load it from disk with a refresh TTL.
         let companies: HashMap<String, CompanyTicker> = self
             .get_json("https://www.sec.gov/files/company_tickers.json")
             .await?;
+        let mut companies = companies.into_values().collect::<Vec<_>>();
+        companies.sort_by(|a, b| a.ticker.cmp(&b.ticker));
 
-        companies
-            .into_values()
-            .find(|company| company.ticker.eq_ignore_ascii_case(ticker))
-            .ok_or(AppError::TickerNotFound)
+        Ok(companies)
     }
 
     pub async fn fetch_submissions(&self, cik: u64) -> Result<Submissions, AppError> {

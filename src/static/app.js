@@ -1,5 +1,6 @@
 const form = document.querySelector("#compare-form");
 const tickerInput = document.querySelector("#ticker");
+const tickerResults = document.querySelector("#ticker-results");
 const message = document.querySelector("#message");
 const dashboard = document.querySelector("#dashboard");
 const companyLabel = document.querySelector("#company-label");
@@ -26,10 +27,40 @@ const TREND_ORDER = [
   { key: "margins", label: "Margins" },
 ];
 
+let tickerCompanies = [];
+let tickerLookup = null;
+let tickerRequest = null;
+let selectedTicker = tickerInput.value.trim().toUpperCase();
+
+tickerInput.addEventListener("input", async () => {
+  selectedTicker = "";
+  await renderTickerMatches(tickerInput.value);
+});
+
+tickerInput.addEventListener("focus", async () => {
+  await renderTickerMatches(tickerInput.value);
+});
+
+document.addEventListener("click", (event) => {
+  if (!form.contains(event.target)) {
+    hideTickerMatches();
+  }
+});
+
+tickerResults.addEventListener("mousedown", (event) => {
+  const option = event.target.closest("[data-ticker]");
+  if (!option) {
+    return;
+  }
+
+  event.preventDefault();
+  chooseTicker(option.dataset.ticker);
+});
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
-  const ticker = tickerInput.value.trim().toUpperCase();
+  const ticker = await resolveSubmittedTicker();
   if (!ticker) {
     showError("Enter a ticker first.");
     return;
@@ -38,6 +69,186 @@ form.addEventListener("submit", async (event) => {
   tickerInput.value = ticker;
   await loadDashboard(ticker);
 });
+
+async function resolveSubmittedTicker() {
+  const value = tickerInput.value.trim();
+  if (!value) {
+    return "";
+  }
+
+  const normalized = value.toUpperCase();
+  if (selectedTicker && selectedTicker === normalized) {
+    return selectedTicker;
+  }
+
+  try {
+    const lookup = await getTickerLookup();
+    const exactTicker = lookup.byTicker.get(normalized);
+    if (exactTicker) {
+      return exactTicker.ticker;
+    }
+
+    const exactCompany = lookup.byTitle.get(normalizeSearchText(value));
+    if (exactCompany) {
+      chooseTicker(exactCompany.ticker);
+      return exactCompany.ticker;
+    }
+
+    const firstMatch = searchTickerCompanies(value, 1)[0];
+    if (firstMatch) {
+      chooseTicker(firstMatch.ticker);
+      return firstMatch.ticker;
+    }
+  } catch {
+    return normalized;
+  }
+
+  return normalized;
+}
+
+async function renderTickerMatches(value) {
+  const query = value.trim();
+  if (!query) {
+    hideTickerMatches();
+    return;
+  }
+
+  try {
+    await loadTickerCompanies();
+  } catch {
+    tickerResults.replaceChildren(createTickerStatus("Ticker search is unavailable right now."));
+    tickerResults.classList.remove("is-hidden");
+    return;
+  }
+
+  const matches = searchTickerCompanies(query, 8);
+  if (!matches.length) {
+    tickerResults.replaceChildren(createTickerStatus("No company matches found."));
+    tickerResults.classList.remove("is-hidden");
+    return;
+  }
+
+  tickerResults.replaceChildren(...matches.map(createTickerOption));
+  tickerResults.classList.remove("is-hidden");
+}
+
+function searchTickerCompanies(query, limit) {
+  const normalized = normalizeSearchText(query);
+  if (!normalized) {
+    return [];
+  }
+
+  return tickerCompanies
+    .map((company) => {
+      const ticker = company.ticker.toUpperCase();
+      const title = normalizeSearchText(company.title);
+      let rank = 0;
+
+      if (ticker === normalized) {
+        rank = 1;
+      } else if (ticker.startsWith(normalized)) {
+        rank = 2;
+      } else if (title.startsWith(normalized)) {
+        rank = 3;
+      } else if (ticker.includes(normalized)) {
+        rank = 4;
+      } else if (title.includes(normalized)) {
+        rank = 5;
+      }
+
+      return rank ? { company, rank } : null;
+    })
+    .filter(Boolean)
+    .sort(
+      (a, b) =>
+        a.rank - b.rank ||
+        a.company.title.length - b.company.title.length ||
+        a.company.ticker.localeCompare(b.company.ticker),
+    )
+    .slice(0, limit)
+    .map((match) => match.company);
+}
+
+async function loadTickerCompanies() {
+  if (tickerCompanies.length) {
+    return tickerCompanies;
+  }
+
+  if (!tickerRequest) {
+    tickerRequest = fetchJson("/tickers").then((response) => {
+      if (!response.ok || !Array.isArray(response.payload)) {
+        throw new Error(response.error || "Ticker search is unavailable right now.");
+      }
+
+      tickerCompanies = response.payload
+        .filter((company) => company?.ticker && company?.title)
+        .map((company) => ({
+          cik: company.cik_str,
+          ticker: String(company.ticker).toUpperCase(),
+          title: String(company.title),
+        }));
+      tickerLookup = null;
+      return tickerCompanies;
+    });
+  }
+
+  return tickerRequest;
+}
+
+async function getTickerLookup() {
+  await loadTickerCompanies();
+
+  if (tickerLookup) {
+    return tickerLookup;
+  }
+
+  tickerLookup = {
+    byTicker: new Map(),
+    byTitle: new Map(),
+  };
+
+  tickerCompanies.forEach((company) => {
+    tickerLookup.byTicker.set(company.ticker.toUpperCase(), company);
+    tickerLookup.byTitle.set(normalizeSearchText(company.title), company);
+  });
+
+  return tickerLookup;
+}
+
+function createTickerOption(company) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ticker-option";
+  button.dataset.ticker = company.ticker;
+  button.setAttribute("role", "option");
+
+  const ticker = document.createElement("strong");
+  ticker.textContent = company.ticker;
+
+  const title = document.createElement("span");
+  title.textContent = company.title;
+
+  button.append(ticker, title);
+  return button;
+}
+
+function createTickerStatus(text) {
+  const status = document.createElement("p");
+  status.className = "ticker-status";
+  status.textContent = text;
+  return status;
+}
+
+function chooseTicker(ticker) {
+  selectedTicker = ticker.toUpperCase();
+  tickerInput.value = selectedTicker;
+  hideTickerMatches();
+}
+
+function hideTickerMatches() {
+  tickerResults.classList.add("is-hidden");
+  tickerResults.replaceChildren();
+}
 
 async function loadDashboard(ticker) {
   setLoading(true, `Checking the latest 10-Q for ${ticker}...`);
@@ -758,6 +969,13 @@ function defaultHttpError(status) {
 
 function hideDashboard() {
   dashboard.classList.add("is-hidden");
+}
+
+function normalizeSearchText(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ");
 }
 
 function isObject(value) {

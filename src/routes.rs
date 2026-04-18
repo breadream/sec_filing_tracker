@@ -26,6 +26,7 @@ pub fn router(sec_client: Arc<SecClient>) -> Router {
         .route("/static/styles.css", get(styles))
         .route("/static/app.js", get(app_js))
         .route("/health", get(health))
+        .route("/tickers", get(tickers))
         .route("/compare/:ticker", get(compare))
         .route("/analyze/:ticker", get(analyze))
         .with_state(sec_client)
@@ -52,6 +53,12 @@ async fn app_js() -> impl IntoResponse {
 
 async fn health() -> Json<HealthResponse> {
     Json(HealthResponse { ok: true })
+}
+
+async fn tickers(
+    State(sec_client): State<Arc<SecClient>>,
+) -> Result<Json<Vec<crate::models::CompanyTicker>>, AppError> {
+    Ok(Json(sec_client.fetch_company_tickers().await?))
 }
 
 async fn compare(

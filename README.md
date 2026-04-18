@@ -43,7 +43,9 @@ The app resolves a ticker to a SEC CIK, fetches recent SEC filing metadata, down
 
 ## Running Locally
 
-SEC requests should include a descriptive `User-Agent`. Set `SEC_USER_AGENT` before running the server:
+Install Rust if you do not already have it, then run the app from the repository root.
+
+SEC requests must include a descriptive `User-Agent`. Set `SEC_USER_AGENT` before running the server:
 
 ```bash
 SEC_USER_AGENT='sec-filing-health-dashboard/0.1 your-email@example.com' cargo run
@@ -56,6 +58,14 @@ http://127.0.0.1:3000/
 ```
 
 The server listens on `127.0.0.1:3000`.
+
+You can confirm the backend is up with:
+
+```bash
+curl -sS http://127.0.0.1:3000/health
+```
+
+The ticker search and analysis endpoints fetch live SEC data, so keep the server running while using the browser dashboard.
 
 ## API Endpoints
 
@@ -198,4 +208,3 @@ cargo fmt
 - Add paragraph-level MD&A and risk-factor extraction.
 - Add evidence snippets for warning signs.
 - Consider AI summaries only after deterministic paragraph-level changes are identified.
-

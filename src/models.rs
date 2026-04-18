@@ -80,10 +80,11 @@ pub struct SectionComparisonResponse {
     pub summary: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CompanyTicker {
     pub cik_str: u64,
     pub ticker: String,
+    pub title: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

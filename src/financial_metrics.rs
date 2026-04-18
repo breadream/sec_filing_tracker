@@ -13,8 +13,11 @@ pub fn financial_trends(facts: &CompanyFacts) -> Vec<FinancialTrend> {
         "Revenue",
         &[
             "RevenueFromContractWithCustomerExcludingAssessedTax",
-            "Revenues",
             "SalesRevenueNet",
+            "Revenues",
+            "SalesRevenueGoodsNet",
+            "SalesRevenueServicesNet",
+            "RevenueFromContractWithCustomerIncludingAssessedTax",
         ],
         Direction::HigherIsBetter,
     );
@@ -100,8 +103,11 @@ fn concept_trend(
     concept_aliases: &[&str],
     direction: Direction,
 ) -> FinancialTrend {
-    let pair = select_recent_usd_facts(facts, concept_aliases, "10-Q")
-        .and_then(|series| latest_previous_by_period_end(&prefer_quarterly_points(&series.facts)));
+    let pair = concept_aliases.iter().find_map(|alias| {
+        select_recent_usd_facts(facts, &[*alias], "10-Q").and_then(|series| {
+            latest_previous_by_period_end(&prefer_quarterly_points(&series.facts))
+        })
+    });
 
     trend_from_pair(
         name,
@@ -242,4 +248,84 @@ fn round_percent(value: f64) -> f64 {
 
 fn round_millions(value: f64) -> f64 {
     (value * 10.0).round() / 10.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const REVENUE_ALIAS_FIXTURE: &str = r#"
+    {
+      "facts": {
+        "us-gaap": {
+          "RevenueFromContractWithCustomerExcludingAssessedTax": {
+            "label": "Revenue from Contract with Customer, Excluding Assessed Tax",
+            "units": {
+              "USD": [
+                {
+                  "val": 1000000,
+                  "form": "10-Q",
+                  "filed": "2025-05-01",
+                  "start": "2025-01-01",
+                  "end": "2025-03-31"
+                }
+              ]
+            }
+          },
+          "RevenueFromContractWithCustomerIncludingAssessedTax": {
+            "label": "Revenue from Contract with Customer, Including Assessed Tax",
+            "units": {
+              "USD": [
+                {
+                  "val": 71798000,
+                  "form": "10-Q",
+                  "filed": "2025-08-08",
+                  "start": "2025-01-01",
+                  "end": "2025-06-30"
+                },
+                {
+                  "val": 39685000,
+                  "form": "10-Q",
+                  "filed": "2025-08-08",
+                  "start": "2025-04-01",
+                  "end": "2025-06-30"
+                },
+                {
+                  "val": 104787000,
+                  "form": "10-Q",
+                  "filed": "2025-11-07",
+                  "start": "2025-01-01",
+                  "end": "2025-09-30"
+                },
+                {
+                  "val": 32989000,
+                  "form": "10-Q",
+                  "filed": "2025-11-07",
+                  "start": "2025-07-01",
+                  "end": "2025-09-30"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+    "#;
+
+    #[test]
+    fn revenue_uses_next_alias_when_first_concept_lacks_comparable_pair() {
+        let company_facts: CompanyFacts =
+            serde_json::from_str(REVENUE_ALIAS_FIXTURE).expect("fixture parses");
+
+        let revenue = financial_trends(&company_facts)
+            .into_iter()
+            .find(|trend| trend.name == "Revenue")
+            .expect("revenue trend");
+
+        assert_eq!(revenue.latest, Some(33.0));
+        assert_eq!(revenue.previous, Some(39.7));
+        assert_eq!(revenue.latest_period_end.as_deref(), Some("2025-09-30"));
+        assert_eq!(revenue.previous_period_end.as_deref(), Some("2025-06-30"));
+        assert_eq!(revenue.change_percent, Some(-16.9));
+    }
 }

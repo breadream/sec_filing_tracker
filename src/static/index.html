@@ -18,23 +18,23 @@
           </p>
 
           <form id="compare-form" class="search-panel">
-            <label for="ticker">Ticker</label>
+            <label for="ticker">Search By</label>
             <div class="search-row">
               <input
                 id="ticker"
                 name="ticker"
                 value="AAPL"
                 autocomplete="off"
-                maxlength="12"
+                maxlength="80"
+                placeholder="Ticker or company name"
+                aria-autocomplete="list"
+                aria-controls="ticker-results"
                 spellcheck="false"
                 required
               />
               <button type="submit">Analyze 10-Q</button>
             </div>
-            <p class="hint">
-              The page tries <code>/analyze/{ticker}</code> first and falls back to the current
-              compare endpoint when structured analysis is not available.
-            </p>
+            <div id="ticker-results" class="ticker-results is-hidden" role="listbox" aria-label="Company matches"></div>
           </form>
         </div>
       </section>

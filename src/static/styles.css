@@ -140,7 +140,6 @@ input {
   background: var(--surface);
   border: 1px solid #a8b7b0;
   border-radius: 8px;
-  text-transform: uppercase;
 }
 
 input:focus {
@@ -168,6 +167,63 @@ button:disabled {
   background: #73838c;
   border-color: #73838c;
   cursor: wait;
+}
+
+.ticker-results {
+  display: grid;
+  gap: 6px;
+  max-height: 312px;
+  overflow: auto;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.ticker-option {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 10px;
+  color: var(--ink);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.ticker-option:hover,
+.ticker-option:focus {
+  color: var(--ink);
+  background: var(--soft);
+  outline: none;
+}
+
+.ticker-option strong {
+  color: var(--teal);
+  font-size: 0.9rem;
+  letter-spacing: 0;
+}
+
+.ticker-option span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ticker-status {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .hint,
@@ -654,6 +710,11 @@ button:disabled {
 
   .warning-meta {
     justify-items: start;
+  }
+
+  .ticker-option {
+    grid-template-columns: 1fr;
+    gap: 2px;
   }
 
   button {
