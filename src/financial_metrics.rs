@@ -1,15 +1,17 @@
 use crate::{
     company_facts::{
-        CompanyFacts, FactPoint, latest_previous_by_period_end, select_recent_usd_facts,
+        CompanyFacts, FactPoint, company_facts_url, latest_previous_by_period_end,
+        select_recent_usd_facts,
     },
     models::FinancialTrend,
 };
 
 const USD_MILLIONS: f64 = 1_000_000.0;
 
-pub fn financial_trends(facts: &CompanyFacts) -> Vec<FinancialTrend> {
+pub fn financial_trends(facts: &CompanyFacts, cik: u64) -> Vec<FinancialTrend> {
     let revenue = concept_trend(
         facts,
+        cik,
         "Revenue",
         &[
             "RevenueFromContractWithCustomerExcludingAssessedTax",
@@ -23,30 +25,35 @@ pub fn financial_trends(facts: &CompanyFacts) -> Vec<FinancialTrend> {
     );
     let net_income = concept_trend(
         facts,
+        cik,
         "Net income",
         &["NetIncomeLoss"],
         Direction::HigherIsBetter,
     );
     let operating_income = concept_trend(
         facts,
+        cik,
         "Operating income",
         &["OperatingIncomeLoss"],
         Direction::HigherIsBetter,
     );
     let gross_profit = concept_trend(
         facts,
+        cik,
         "Gross profit",
         &["GrossProfit"],
         Direction::HigherIsBetter,
     );
     let operating_cash_flow = concept_trend(
         facts,
+        cik,
         "Operating cash flow",
         &["NetCashProvidedByUsedInOperatingActivities"],
         Direction::HigherIsBetter,
     );
     let cash = concept_trend(
         facts,
+        cik,
         "Cash and equivalents",
         &[
             "CashAndCashEquivalentsAtCarryingValue",
@@ -56,6 +63,7 @@ pub fn financial_trends(facts: &CompanyFacts) -> Vec<FinancialTrend> {
     );
     let debt = concept_trend(
         facts,
+        cik,
         "Debt",
         &[
             "LongTermDebtAndFinanceLeaseObligations",
@@ -99,6 +107,7 @@ enum Direction {
 
 fn concept_trend(
     facts: &CompanyFacts,
+    cik: u64,
     name: &str,
     concept_aliases: &[&str],
     direction: Direction,
@@ -111,6 +120,7 @@ fn concept_trend(
 
     trend_from_pair(
         name,
+        cik,
         pair.as_ref().map(|pair| (&pair.latest, &pair.previous)),
         direction,
     )
@@ -118,6 +128,7 @@ fn concept_trend(
 
 fn trend_from_pair(
     name: &str,
+    cik: u64,
     pair: Option<(&FactPoint, &FactPoint)>,
     direction: Direction,
 ) -> FinancialTrend {
@@ -138,6 +149,13 @@ fn trend_from_pair(
         change_percent,
         status: status.clone(),
         summary: trend_summary(name, change_percent, &status),
+        source_label: "SEC company facts".to_string(),
+        source_namespace: latest.map(|point| point.namespace.clone()),
+        source_concept: latest.map(|point| point.concept.clone()),
+        source_endpoint_family: "companyfacts".to_string(),
+        source_url: Some(company_facts_url(cik)),
+        source_form: latest.map(|point| point.form.clone()),
+        source_filed: latest.and_then(|point| point.filed.clone()),
     }
 }
 
@@ -170,6 +188,16 @@ fn margin_trend(
         change_percent,
         status: status.clone(),
         summary: trend_summary(name, change_percent, &status),
+        source_label: format!("Derived from {} and {}", revenue.name, numerator.name),
+        source_namespace: None,
+        source_concept: None,
+        source_endpoint_family: "derived".to_string(),
+        source_url: revenue.source_url.clone(),
+        source_form: revenue.source_form.clone(),
+        source_filed: revenue
+            .source_filed
+            .clone()
+            .or_else(|| numerator.source_filed.clone()),
     })
 }
 
@@ -317,7 +345,7 @@ mod tests {
         let company_facts: CompanyFacts =
             serde_json::from_str(REVENUE_ALIAS_FIXTURE).expect("fixture parses");
 
-        let revenue = financial_trends(&company_facts)
+        let revenue = financial_trends(&company_facts, 0)
             .into_iter()
             .find(|trend| trend.name == "Revenue")
             .expect("revenue trend");

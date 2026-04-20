@@ -2,12 +2,20 @@ const form = document.querySelector("#compare-form");
 const tickerInput = document.querySelector("#ticker");
 const tickerResults = document.querySelector("#ticker-results");
 const message = document.querySelector("#message");
+const analysisStatus = document.querySelector("#analysis-status");
+const analysisStatusTitle = document.querySelector("#analysis-status-title");
+const analysisStatusPercent = document.querySelector("#analysis-status-percent");
+const analysisStatusFill = document.querySelector("#analysis-status-fill");
+const analysisStatusCopy = document.querySelector("#analysis-status-copy");
+const analysisStatusSteps = document.querySelector("#analysis-status-steps");
 const dashboard = document.querySelector("#dashboard");
 const companyLabel = document.querySelector("#company-label");
 const healthSummary = document.querySelector("#health-summary");
 const healthStatus = document.querySelector("#health-status");
 const healthScore = document.querySelector("#health-score");
 const healthScoreFill = document.querySelector("#health-score-fill");
+const healthMethodology = document.querySelector("#health-methodology");
+const healthDrivers = document.querySelector("#health-drivers");
 const latestDate = document.querySelector("#latest-date");
 const previousDate = document.querySelector("#previous-date");
 const latestLink = document.querySelector("#latest-link");
@@ -27,10 +35,36 @@ const TREND_ORDER = [
   { key: "margins", label: "Margins" },
 ];
 
+const ANALYSIS_STAGES = [
+  {
+    label: "Resolve company",
+    copy: "Match the ticker, confirm the company, and prepare the SEC lookup.",
+    percent: 14,
+  },
+  {
+    label: "Pull filings",
+    copy: "Fetch the latest 10-Q references and gather the filing sources.",
+    percent: 36,
+  },
+  {
+    label: "Build signals",
+    copy: "Compute revenue, income, cash flow, debt, and margin trends from SEC company facts.",
+    percent: 68,
+  },
+  {
+    label: "Review narrative",
+    copy: "Compare filing sections and, when enabled, let AI review the latest 10-Q language.",
+    percent: 92,
+  },
+];
+
 let tickerCompanies = [];
 let tickerLookup = null;
 let tickerRequest = null;
 let selectedTicker = tickerInput.value.trim().toUpperCase();
+let analysisProgressInterval = null;
+let analysisProgressState = null;
+let analysisProgressHideTimeout = null;
 
 tickerInput.addEventListener("input", async () => {
   selectedTicker = "";
@@ -252,6 +286,7 @@ function hideTickerMatches() {
 
 async function loadDashboard(ticker) {
   setLoading(true, `Checking the latest 10-Q for ${ticker}...`);
+  startAnalysisStatus(ticker);
 
   try {
     const payload = await fetchDashboardPayload(ticker);
@@ -261,9 +296,11 @@ async function loadDashboard(ticker) {
       throw new Error("The server returned an unexpected response shape.");
     }
 
+    completeAnalysisStatus(normalized);
     renderDashboard(normalized);
     showMessage(normalized.message);
   } catch (error) {
+    stopAnalysisStatus();
     hideDashboard();
     showError(error.message);
   } finally {
@@ -386,6 +423,7 @@ function normalizeAnalyzePayload(payload) {
     latestUrl: payload.latest_filing_url || payload.latest_url || "",
     previousUrl: payload.previous_filing_url || payload.previous_url || "",
     overallHealth,
+    aiAnalysis: normalizeAiAnalysis(payload.ai_analysis),
     financialTrends,
     warningSigns,
     managementNotes,
@@ -407,6 +445,8 @@ function normalizeComparePayload(payload) {
     summary:
       payload.overall_summary ||
       "This endpoint currently returns section comparison details only. Structured financial trend data is not available yet.",
+    methodology: "Fallback view from section comparison only.",
+    drivers: [],
   };
 
   return {
@@ -420,6 +460,11 @@ function normalizeComparePayload(payload) {
     latestUrl: payload.latest_filing_url || "",
     previousUrl: payload.previous_filing_url || "",
     overallHealth,
+    aiAnalysis: {
+      enabled: false,
+      used: false,
+      message: "AI evidence is not available in compare fallback.",
+    },
     financialTrends: buildFallbackTrends(),
     warningSigns: deriveWarningsFromSections(sectionChanges),
     managementNotes: deriveNarrativeFromSections(sectionChanges, "management"),
@@ -437,6 +482,8 @@ function normalizeOverallHealth(value, payload) {
       summary:
         payload.overall_summary ||
         "The filing is available, but the backend did not return a structured health summary yet.",
+      methodology: "Fallback score inferred from available filing comparison data.",
+      drivers: [],
     };
   }
 
@@ -449,7 +496,52 @@ function normalizeOverallHealth(value, payload) {
       value.message ||
       payload.overall_summary ||
       "The filing is available, but the backend did not return a structured health summary yet.",
+    methodology: value.methodology || "Score is based on available operating and filing signals.",
+    drivers: normalizeHealthDrivers(value.drivers || value.contributions || value.evidence),
   };
+}
+
+function normalizeAiAnalysis(value) {
+  if (!isObject(value)) {
+    return {
+      enabled: false,
+      used: false,
+      message: "",
+    };
+  }
+
+  return {
+    enabled: Boolean(value.enabled),
+    used: Boolean(value.used),
+    model: value.model || "",
+    message: value.message || "",
+  };
+}
+
+function normalizeHealthDrivers(value) {
+  return coerceArray(value)
+    .map((item) => {
+      if (typeof item === "string") {
+        return {
+          label: "Evidence",
+          impact: "neutral",
+          summary: item,
+          evidence: "",
+        };
+      }
+
+      if (!isObject(item)) {
+        return null;
+      }
+
+      return {
+        label: item.label || item.name || item.title || "Signal",
+        impact: normalizeImpact(item.impact || item.direction || item.status),
+        summary: item.summary || item.message || item.note || "",
+        evidence: item.evidence || item.snippet || item.detail || "",
+      };
+    })
+    .filter(Boolean);
 }
 
 function normalizeFinancialTrends(value) {
@@ -493,6 +585,15 @@ function normalizeTrendItem(item, fallbackLabel) {
     unit: item.unit || item.units || "",
     status,
     note: item.summary || item.note || item.explanation || item.description || "",
+    latestPeriodEnd: item.latest_period_end || item.latestPeriodEnd || "",
+    previousPeriodEnd: item.previous_period_end || item.previousPeriodEnd || "",
+    sourceLabel: item.source_label || item.sourceLabel || "",
+    sourceNamespace: item.source_namespace || item.sourceNamespace || "",
+    sourceConcept: item.source_concept || item.sourceConcept || "",
+    sourceEndpointFamily: item.source_endpoint_family || item.sourceEndpointFamily || "",
+    sourceUrl: item.source_url || item.sourceUrl || "",
+    sourceForm: item.source_form || item.sourceForm || "",
+    sourceFiled: item.source_filed || item.sourceFiled || "",
     available: latest !== null || previous !== null || delta !== null,
   };
 }
@@ -557,17 +658,48 @@ function normalizeSectionChanges(value) {
       const changeScore = clampScore(
         pickFirst(item, ["change_score", "score", "change", "delta", "importance"]) ?? 0,
       );
-      const status = normalizeSectionStatus(item.status, changeScore);
+      const attentionScore = clampScore(
+        pickFirst(item, ["attention_score", "attention", "risk_score"]) ?? changeScore,
+      );
+      const status = normalizeSectionStatus(item.status, attentionScore);
 
       return {
         name: item.name || item.label || item.title || "Section",
         changeScore,
+        attentionScore,
         status,
         summary: item.summary || item.note || item.description || "",
+        analysisBasis: item.analysis_basis || item.methodology || "",
+        similarity: pickFirst(item, ["similarity"]),
+        paragraphOverlap: pickFirst(item, ["paragraph_overlap"]),
+        lengthDelta: pickFirst(item, ["length_delta"]),
+        evidence: normalizeEvidenceItems(item.evidence || item.excerpts || item.supporting_evidence),
       };
     })
     .filter(Boolean)
     .sort((a, b) => b.changeScore - a.changeScore);
+}
+
+function normalizeEvidenceItems(value) {
+  return coerceArray(value)
+    .map((item) => {
+      if (typeof item === "string") {
+        return {
+          label: "Evidence",
+          snippet: item,
+        };
+      }
+
+      if (!isObject(item)) {
+        return null;
+      }
+
+      return {
+        label: item.label || item.title || item.kind || "Evidence",
+        snippet: item.snippet || item.text || item.evidence || item.summary || "",
+      };
+    })
+    .filter((item) => item && item.snippet);
 }
 
 function buildFallbackTrends() {
@@ -647,6 +779,8 @@ function renderDashboard(data) {
   const healthPercent = Math.round(clampScore(data.overallHealth.score) * 100);
   healthScore.textContent = `${healthPercent}%`;
   healthScoreFill.style.width = `${healthPercent}%`;
+  healthMethodology.textContent = data.overallHealth.methodology;
+  renderHealthDrivers(data.overallHealth.drivers);
 
   latestDate.textContent = data.latestDate;
   previousDate.textContent = data.previousDate;
@@ -657,7 +791,7 @@ function renderDashboard(data) {
   previousLink.target = "_blank";
   previousLink.rel = "noreferrer";
 
-  trendSource.textContent = data.sourceLabel;
+  trendSource.textContent = data.aiAnalysis?.message || data.sourceLabel;
   renderTrendGrid(data.financialTrends);
   renderWarningList(data.warningSigns);
   renderNoteList(data.managementNotes, data.riskNotes);
@@ -665,6 +799,50 @@ function renderDashboard(data) {
 
   sectionCount.textContent = `${data.sectionChanges.length} sections`;
   dashboard.classList.remove("is-hidden");
+}
+
+function renderHealthDrivers(items) {
+  healthDrivers.replaceChildren();
+
+  if (!items.length) {
+    healthDrivers.append(createEmptyState("No score drivers were returned yet.", "The score will show its inputs here when the backend supplies them."));
+    return;
+  }
+
+  items.forEach((item) => healthDrivers.append(createHealthDriver(item)));
+}
+
+function createHealthDriver(item) {
+  const card = document.createElement("article");
+  card.className = `driver-item ${item.impact}`;
+
+  const top = document.createElement("div");
+  top.className = "driver-topline";
+
+  const title = document.createElement("h3");
+  title.className = "warning-title";
+  title.textContent = item.label;
+
+  const impact = document.createElement("span");
+  impact.className = `warning-severity ${severityFromImpact(item.impact)}`;
+  impact.textContent = titleCase(item.impact);
+
+  top.append(title, impact);
+
+  const summary = document.createElement("p");
+  summary.className = "warning-copy";
+  summary.textContent = item.summary || "This signal contributed to the health score.";
+
+  card.append(top, summary);
+
+  if (item.evidence) {
+    const evidence = document.createElement("p");
+    evidence.className = "evidence-snippet";
+    evidence.textContent = item.evidence;
+    card.append(evidence);
+  }
+
+  return card;
 }
 
 function renderTrendGrid(items) {
@@ -728,7 +906,55 @@ function createTrendCard(item) {
   note.textContent = item.note || (item.available ? "" : "Structured metric data is not available yet.");
 
   card.append(top, value, chartBlock, note);
+
+  const provenance = buildTrendProvenance(item);
+  if (provenance) {
+    const source = document.createElement(item.sourceUrl ? "a" : "p");
+    source.className = "metric-source";
+    source.textContent = provenance;
+
+    if (item.sourceUrl) {
+      source.href = item.sourceUrl;
+      source.target = "_blank";
+      source.rel = "noreferrer";
+    }
+
+    card.append(source);
+  }
+
   return card;
+}
+
+function buildTrendProvenance(item) {
+  const parts = [];
+
+  if (item.sourceLabel) {
+    parts.push(item.sourceLabel);
+  }
+
+  if (item.sourceNamespace && item.sourceConcept) {
+    parts.push(`${item.sourceNamespace}.${item.sourceConcept}`);
+  } else if (item.sourceConcept) {
+    parts.push(item.sourceConcept);
+  }
+
+  if (item.latestPeriodEnd) {
+    parts.push(`latest period end ${item.latestPeriodEnd}`);
+  }
+
+  if (item.sourceFiled) {
+    parts.push(`filed ${item.sourceFiled}`);
+  }
+
+  if (item.sourceForm) {
+    parts.push(item.sourceForm);
+  }
+
+  if (item.sourceEndpointFamily && item.sourceEndpointFamily !== "derived") {
+    parts.push(item.sourceEndpointFamily);
+  }
+
+  return parts.filter(Boolean).join(" · ");
 }
 
 function metricBars(item) {
@@ -884,6 +1110,7 @@ function renderSectionChanges(items) {
 function createSectionItem(item) {
   const card = document.createElement("article");
   card.className = "section-item";
+  const attentionScore = clampScore(item.attentionScore ?? item.changeScore);
 
   const top = document.createElement("div");
   top.className = "section-topline";
@@ -894,7 +1121,7 @@ function createSectionItem(item) {
 
   const score = document.createElement("span");
   score.className = "section-score";
-  score.textContent = `${Math.round(clampScore(item.changeScore) * 100)}%`;
+  score.textContent = `Attention ${Math.round(attentionScore * 100)}`;
 
   top.append(title, score);
 
@@ -904,7 +1131,7 @@ function createSectionItem(item) {
 
   const fill = document.createElement("div");
   fill.className = "section-fill";
-  fill.style.width = `${Math.round(clampScore(item.changeScore) * 100)}%`;
+  fill.style.width = `${Math.round(attentionScore * 100)}%`;
   track.append(fill);
 
   const status = document.createElement("span");
@@ -915,8 +1142,46 @@ function createSectionItem(item) {
   summary.className = "section-summary";
   summary.textContent = item.summary || "This section changed compared with the prior filing.";
 
-  card.append(top, track, status, summary);
+  const basis = document.createElement("p");
+  basis.className = "section-basis";
+  basis.textContent = item.analysisBasis || buildSectionBasis(item);
+
+  card.append(top, track, status, summary, basis);
+
+  if (item.evidence.length) {
+    const evidenceList = document.createElement("div");
+    evidenceList.className = "evidence-list";
+    item.evidence.slice(0, 3).forEach((evidence) => evidenceList.append(createEvidenceItem(evidence)));
+    card.append(evidenceList);
+  }
+
   return card;
+}
+
+function createEvidenceItem(item) {
+  const wrapper = document.createElement("p");
+  wrapper.className = "evidence-snippet";
+
+  const label = document.createElement("strong");
+  label.textContent = `${item.label}: `;
+
+  const snippet = document.createElement("span");
+  snippet.textContent = item.snippet;
+
+  wrapper.append(label, snippet);
+  return wrapper;
+}
+
+function buildSectionBasis(item) {
+  const similarity = Number(item.similarity);
+  const overlap = Number(item.paragraphOverlap);
+  const lengthDelta = Number(item.lengthDelta);
+
+  if ([similarity, overlap, lengthDelta].every(Number.isFinite)) {
+    return `Change basis: ${Math.round(similarity * 100)}% wording similarity, ${Math.round(overlap * 100)}% paragraph overlap, ${Math.round(lengthDelta * 100)}% length movement.`;
+  }
+
+  return "Attention combines disclosure movement with the section's current filing context.";
 }
 
 function createEmptyState(titleText, copyText) {
@@ -943,6 +1208,123 @@ function setLoading(isLoading, text = "") {
   if (text) {
     showMessage(text);
   }
+}
+
+function startAnalysisStatus(ticker) {
+  stopAnalysisStatus(false);
+
+  analysisProgressState = {
+    ticker,
+    progress: 4,
+    stageIndex: 0,
+  };
+
+  renderAnalysisStatus({
+    title: `Analyzing ${ticker}`,
+    copy: ANALYSIS_STAGES[0].copy,
+    progress: analysisProgressState.progress,
+    activeStage: 0,
+  });
+
+  analysisStatus.classList.remove("is-hidden");
+
+  analysisProgressInterval = window.setInterval(() => {
+    if (!analysisProgressState) {
+      return;
+    }
+
+    const nextStageIndex = ANALYSIS_STAGES.findIndex((stage) => analysisProgressState.progress < stage.percent);
+    analysisProgressState.stageIndex =
+      nextStageIndex === -1 ? ANALYSIS_STAGES.length - 1 : Math.max(0, nextStageIndex);
+
+    const currentStage = ANALYSIS_STAGES[analysisProgressState.stageIndex];
+    const maxProgress = currentStage.percent;
+    const increment = analysisProgressState.progress < 36 ? 5 : analysisProgressState.progress < 68 ? 3 : 1.5;
+
+    analysisProgressState.progress = Math.min(
+      maxProgress,
+      Math.max(analysisProgressState.progress + increment, currentStage.percent - 8),
+    );
+
+    renderAnalysisStatus({
+      title: `Analyzing ${analysisProgressState.ticker}`,
+      copy: currentStage.copy,
+      progress: analysisProgressState.progress,
+      activeStage: analysisProgressState.stageIndex,
+    });
+  }, 650);
+}
+
+function completeAnalysisStatus(data) {
+  const aiEnabled = Boolean(data?.aiAnalysis?.enabled);
+  const aiUsed = Boolean(data?.aiAnalysis?.used);
+  const finalCopy = aiUsed
+    ? "SEC data is loaded and the AI review finished."
+    : aiEnabled
+      ? "SEC data is loaded. AI review was unavailable, so the deterministic analysis is shown."
+      : "SEC data is loaded. The dashboard is ready with deterministic filing analysis.";
+
+  renderAnalysisStatus({
+    title: "Analysis ready",
+    copy: finalCopy,
+    progress: 100,
+    activeStage: ANALYSIS_STAGES.length - 1,
+  });
+
+  analysisProgressHideTimeout = window.setTimeout(() => {
+    stopAnalysisStatus();
+  }, 900);
+}
+
+function stopAnalysisStatus(hide = true) {
+  if (analysisProgressInterval) {
+    window.clearInterval(analysisProgressInterval);
+    analysisProgressInterval = null;
+  }
+
+  if (analysisProgressHideTimeout) {
+    window.clearTimeout(analysisProgressHideTimeout);
+    analysisProgressHideTimeout = null;
+  }
+
+  analysisProgressState = null;
+
+  if (hide) {
+    analysisStatus.classList.add("is-hidden");
+  }
+}
+
+function renderAnalysisStatus({ title, copy, progress, activeStage }) {
+  analysisStatusTitle.textContent = title;
+  analysisStatusCopy.textContent = copy;
+  analysisStatusPercent.textContent = `${Math.round(progress)}%`;
+  analysisStatusFill.style.width = `${Math.round(progress)}%`;
+
+  analysisStatusSteps.replaceChildren(
+    ...ANALYSIS_STAGES.map((stage, index) => createAnalysisStep(stage, index, activeStage, progress)),
+  );
+}
+
+function createAnalysisStep(stage, index, activeStage, progress) {
+  const item = document.createElement("div");
+  item.className = "analysis-step";
+
+  if (progress >= stage.percent) {
+    item.classList.add("is-complete");
+  } else if (index === activeStage) {
+    item.classList.add("is-active");
+  }
+
+  const label = document.createElement("p");
+  label.className = "analysis-step-label";
+  label.textContent = stage.label;
+
+  const copy = document.createElement("p");
+  copy.className = "analysis-step-copy";
+  copy.textContent = stage.copy;
+
+  item.append(label, copy);
+  return item;
 }
 
 function showMessage(text) {
@@ -1086,14 +1468,14 @@ function fallbackHealthScore(payload) {
 
 function deriveHealthStatus(score) {
   if (score >= 0.72) {
-    return "good";
+    return "strong";
   }
 
   if (score >= 0.45) {
-    return "neutral";
+    return "watch";
   }
 
-  return "bad";
+  return "stressed";
 }
 
 function deriveComparisonStatus(score) {
@@ -1112,10 +1494,11 @@ function normalizeStatus(status, score) {
   const text = String(status || "").toLowerCase();
 
   if (text.includes("good") || text.includes("improv") || text.includes("healthy") || text.includes("strong")) {
-    return "good";
+    return "strong";
   }
 
   if (
+    text.includes("steady") ||
     text.includes("warn") ||
     text.includes("watch") ||
     text.includes("moderate") ||
@@ -1127,13 +1510,14 @@ function normalizeStatus(status, score) {
 
   if (
     text.includes("bad") ||
+    text.includes("stress") ||
     text.includes("weak") ||
     text.includes("declin") ||
     text.includes("deterior") ||
     text.includes("risk") ||
     text.includes("material")
   ) {
-    return "bad";
+    return "stressed";
   }
 
   if (typeof score === "number") {
@@ -1150,7 +1534,11 @@ function normalizeSectionStatus(status, score) {
     return "good";
   }
 
-  if (text.includes("changed") || text.includes("moderate")) {
+  if (text.includes("changed")) {
+    return score >= 0.55 ? "bad" : "watch";
+  }
+
+  if (text.includes("moderate")) {
     return "watch";
   }
 
@@ -1212,19 +1600,45 @@ function severityFromScore(score) {
 function toneClass(status) {
   const text = String(status || "").toLowerCase();
 
-  if (text === "good" || text === "improving") {
+  if (text === "good" || text === "strong" || text === "healthy" || text === "improving") {
     return "good";
   }
 
-  if (text === "watch" || text === "neutral" || text === "stable" || text === "fallback") {
+  if (text === "watch" || text === "steady" || text === "neutral" || text === "stable" || text === "fallback") {
     return "watch";
   }
 
-  if (text === "bad" || text === "weakening" || text === "declining") {
+  if (text === "bad" || text === "stressed" || text === "weak" || text === "weakening" || text === "declining") {
     return "bad";
   }
 
   return "neutral";
+}
+
+function normalizeImpact(value) {
+  const text = String(value || "").toLowerCase();
+
+  if (text.includes("positive") || text.includes("up") || text.includes("good")) {
+    return "positive";
+  }
+
+  if (text.includes("negative") || text.includes("down") || text.includes("bad")) {
+    return "negative";
+  }
+
+  return "neutral";
+}
+
+function severityFromImpact(impact) {
+  if (impact === "positive") {
+    return "low";
+  }
+
+  if (impact === "negative") {
+    return "high";
+  }
+
+  return "unknown";
 }
 
 function titleCase(value) {

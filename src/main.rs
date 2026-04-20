@@ -1,3 +1,4 @@
+mod ai_analyzer;
 mod company_facts;
 mod diff;
 mod error;

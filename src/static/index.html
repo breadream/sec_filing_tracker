@@ -40,6 +40,20 @@
       </section>
 
       <p id="message" class="message" aria-live="polite"></p>
+      <section id="analysis-status" class="analysis-status is-hidden" aria-live="polite" aria-label="Analysis progress">
+        <div class="analysis-status-head">
+          <div>
+            <p class="eyebrow">Progress</p>
+            <h2 id="analysis-status-title">Preparing analysis</h2>
+          </div>
+          <span id="analysis-status-percent" class="analysis-status-percent">0%</span>
+        </div>
+        <div class="analysis-status-track" aria-hidden="true">
+          <div id="analysis-status-fill" class="analysis-status-fill"></div>
+        </div>
+        <p id="analysis-status-copy" class="analysis-status-copy"></p>
+        <div id="analysis-status-steps" class="analysis-status-steps"></div>
+      </section>
 
       <section id="dashboard" class="dashboard is-hidden" aria-live="polite">
         <section class="band band-overview" aria-labelledby="overview-title">
@@ -59,6 +73,10 @@
                 </div>
               </div>
             </div>
+          </div>
+          <div class="evidence-panel">
+            <p id="health-methodology" class="evidence-method"></p>
+            <div id="health-drivers" class="driver-grid"></div>
           </div>
 
           <div class="meta-grid">

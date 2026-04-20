@@ -37,6 +37,7 @@ pub struct AnalyzeResponse {
     pub warning_signs: Vec<WarningSign>,
     pub management_explanation: Vec<NarrativeNote>,
     pub section_changes: Vec<SectionComparisonResponse>,
+    pub ai_analysis: AiAnalysisState,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -44,6 +45,16 @@ pub struct OverallHealth {
     pub status: String,
     pub score: f64,
     pub summary: String,
+    pub methodology: String,
+    pub drivers: Vec<HealthDriver>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct HealthDriver {
+    pub label: String,
+    pub impact: String,
+    pub summary: String,
+    pub evidence: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -57,6 +68,13 @@ pub struct FinancialTrend {
     pub change_percent: Option<f64>,
     pub status: String,
     pub summary: String,
+    pub source_label: String,
+    pub source_namespace: Option<String>,
+    pub source_concept: Option<String>,
+    pub source_endpoint_family: String,
+    pub source_url: Option<String>,
+    pub source_form: Option<String>,
+    pub source_filed: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -72,12 +90,32 @@ pub struct NarrativeNote {
     pub summary: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SectionComparisonResponse {
     pub name: String,
     pub change_score: f64,
+    pub attention_score: f64,
     pub status: String,
     pub summary: String,
+    pub analysis_basis: String,
+    pub similarity: f64,
+    pub paragraph_overlap: f64,
+    pub length_delta: f64,
+    pub evidence: Vec<EvidenceItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EvidenceItem {
+    pub label: String,
+    pub snippet: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AiAnalysisState {
+    pub enabled: bool,
+    pub used: bool,
+    pub model: Option<String>,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

@@ -28,6 +28,16 @@ The app resolves a ticker to a SEC CIK, fetches recent SEC filing metadata, down
 - Returns a rough company health score and warning signs.
 - Serves a browser dashboard at `/`.
 
+## Screenshots
+
+Loading progress with staged analysis:
+
+![Loading progress](docs/images/loading-status.png)
+
+Company health signals with SEC company-facts provenance:
+
+![Company health signals](docs/images/company-health-signals.png)
+
 ## Tech Stack
 
 - Rust
@@ -49,6 +59,12 @@ SEC requests must include a descriptive `User-Agent`. Set `SEC_USER_AGENT` befor
 
 ```bash
 SEC_USER_AGENT='sec-filing-health-dashboard/0.1 your-email@example.com' cargo run
+```
+
+Optional AI evidence can be enabled with an OpenAI API key. Without it, the app still returns deterministic scoring, score drivers, and filing excerpts.
+
+```bash
+OPENAI_API_KEY='sk-...' OPENAI_MODEL='gpt-4.1-mini' SEC_USER_AGENT='sec-filing-health-dashboard/0.1 your-email@example.com' cargo run
 ```
 
 Then open:
